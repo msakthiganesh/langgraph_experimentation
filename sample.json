@@ -1,0 +1,219 @@
+{
+  "session_id": "abc123",
+  "user_id": "surender.nalla",
+
+  "initial_query": "What was the transaction volume last Friday?",
+
+  "step_0": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "generate_workflow",
+      "payload": {
+        "query": "What was the transaction volume last Friday?",
+        "context": {
+          "session_id": "abc123",
+          "previous_steps": []
+        }
+      }
+    },
+    "output": {
+      "intent": "PCT Query",
+      "workflow": [
+        {
+          "step": 1,
+          "type": "LLM",
+          "pipeline_name": "query_parser",
+          "prompt": "Convert the following natural language query into a SQL statement to fetch transaction volume: 'What was the transaction volume last Friday?'",
+          "payload": {
+            "query": "What was the transaction volume last Friday?"
+          }
+        },
+        {
+          "step": 2,
+          "type": "DataFetch",
+          "pipeline_name": "snowflake_executor",
+          "payload": {
+            "sql": "{{step_1.output.sql}}"
+          }
+        },
+        {
+          "step": 3,
+          "type": "LLM",
+          "pipeline_name": "response_formatter",
+          "prompt": "Convert the following raw data into a natural language response for the query: 'What was the transaction volume last Friday?'",
+          "payload": {
+            "raw_data": "{{step_2.output.data}}",
+            "query": "What was the transaction volume last Friday?"
+          }
+        }
+      ]
+    }
+  },
+
+  "step_1": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "query_parser",
+      "prompt": "Convert the following natural language query into a SQL statement to fetch transaction volume: 'What was the transaction volume last Friday?'",
+      "payload": {
+        "query": "What was the transaction volume last Friday?"
+      }
+    },
+    "output": {
+      "sql": "SELECT SUM(volume) FROM transactions WHERE transaction_date = '2025-08-29';",
+      "metadata": {
+        "intent": "fetch_transaction_volume",
+        "date": "2025-08-29"
+      }
+    }
+  },
+
+  "step_2": {
+    "input": {
+      "type": "DataFetch",
+      "pipeline_name": "snowflake_executor",
+      "payload": {
+        "sql": "SELECT SUM(volume) FROM transactions WHERE transaction_date = '2025-08-29';"
+      }
+    },
+    "output": {
+      "data": {
+        "volume": 123456
+      },
+      "status": "success"
+    }
+  },
+
+  "step_3": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "response_formatter",
+      "prompt": "Convert the following raw data into a natural language response for the query: 'What was the transaction volume last Friday?'",
+      "payload": {
+        "raw_data": {
+          "volume": 123456
+        },
+        "query": "What was the transaction volume last Friday?"
+      }
+    },
+    "output": {
+      "natural_language": "The total transaction volume for last Friday was 123,456."
+    }
+  },
+
+  "final_response": {
+    "text": "The total transaction volume for last Friday was 123,456.",
+    "source": "step_3.output.natural_language"
+  },
+
+  "follow_up_query": "How does that compare to the previous Friday?",
+
+  "step_4": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "generate_workflow",
+      "payload": {
+        "query": "How does that compare to the previous Friday?",
+        "context": {
+          "session_id": "abc123",
+          "previous_steps": [
+            {
+              "query": "What was the transaction volume last Friday?",
+              "response": "The total transaction volume for last Friday was 123,456."
+            }
+          ]
+        }
+      }
+    },
+    "output": {
+      "intent": "PCT Query",
+      "workflow": [
+        {
+          "step": 5,
+          "type": "LLM",
+          "pipeline_name": "query_parser",
+          "prompt": "Generate a SQL query to compare transaction volumes between last Friday and the previous Friday.",
+          "payload": {
+            "query": "Compare transaction volume between last Friday and the previous Friday"
+          }
+        },
+        {
+          "step": 6,
+          "type": "DataFetch",
+          "pipeline_name": "snowflake_executor",
+          "payload": {
+            "sql": "{{step_5.output.sql}}"
+          }
+        },
+        {
+          "step": 7,
+          "type": "LLM",
+          "pipeline_name": "response_formatter",
+          "prompt": "Convert the following raw data into a natural language comparison of transaction volumes between two dates.",
+          "payload": {
+            "raw_data": "{{step_6.output.data}}",
+            "query": "How does that compare to the previous Friday?"
+          }
+        }
+      ]
+    }
+  },
+
+  "step_5": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "query_parser",
+      "prompt": "Generate a SQL query to compare transaction volumes between last Friday and the previous Friday.",
+      "payload": {
+        "query": "Compare transaction volume between last Friday and the previous Friday"
+      }
+    },
+    "output": {
+      "sql": "SELECT transaction_date, SUM(volume) FROM transactions WHERE transaction_date IN ('2025-08-22', '2025-08-29') GROUP BY transaction_date;",
+      "metadata": {
+        "intent": "compare_transaction_volume",
+        "dates": ["2025-08-22", "2025-08-29"]
+      }
+    }
+  },
+
+  "step_6": {
+    "input": {
+      "type": "DataFetch",
+      "pipeline_name": "snowflake_executor",
+      "payload": {
+        "sql": "SELECT transaction_date, SUM(volume) FROM transactions WHERE transaction_date IN ('2025-08-22', '2025-08-29') GROUP BY transaction_date;"
+      }
+    },
+    "output": {
+      "data": {
+        "2025-08-22": 110000,
+        "2025-08-29": 123456
+      },
+      "status": "success"
+    }
+  },
+
+  "step_7": {
+    "input": {
+      "type": "LLM",
+      "pipeline_name": "response_formatter",
+      "prompt": "Convert the following raw data into a natural language comparison of transaction volumes between two dates.",
+      "payload": {
+        "raw_data": {
+          "2025-08-22": 110000,
+          "2025-08-29": 123456
+        },
+        "query": "How does that compare to the previous Friday?"
+      }
+    },
+    "output": {
+      "natural_language": "The transaction volume increased from 110,000 on the previous Friday to 123,456 last Friday, showing a growth of 12.2%."
+    }
+  },
+
+  "follow_up_response": {
+    "text": "The transaction volume increased from 110,000 on the previous Friday to 123,456 last Friday, showing a growth of 12.2%.",
+    "source": "step_7.output.natural_language"
+  }
+}

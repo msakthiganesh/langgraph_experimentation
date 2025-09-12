@@ -1,0 +1,64 @@
+# Database Schema for LangGraph Chatbot
+# Format: TABLE_NAME | DATA_TYPE | DESCRIPTION
+# Lines starting with # are comments
+
+TABLE: TRANSACTIONS
+DESCRIPTION: Main transaction records table containing all transaction data
+TRANSACTION_ID | VARCHAR | Unique identifier for each transaction
+TRANSACTION_DATE | DATE | Date when the transaction occurred (YYYY-MM-DD format)
+CUSTOMER_ID | VARCHAR | Foreign key linking to CUSTOMERS table
+PRODUCT_ID | VARCHAR | Foreign key linking to PRODUCTS table  
+VOLUME | NUMBER | Transaction amount/volume in currency
+QUANTITY | NUMBER | Number of items/units in the transaction
+TRANSACTION_TYPE | VARCHAR | Type of transaction (SALE, REFUND, EXCHANGE, etc.)
+STATUS | VARCHAR | Current status (COMPLETED, PENDING, CANCELLED, FAILED)
+PAYMENT_METHOD | VARCHAR | Payment method used (CREDIT_CARD, CASH, BANK_TRANSFER, etc.)
+CHANNEL | VARCHAR | Sales channel (ONLINE, STORE, MOBILE_APP, PHONE)
+CREATED_AT | TIMESTAMP | When the record was created
+UPDATED_AT | TIMESTAMP | When the record was last updated
+
+TABLE: CUSTOMERS
+DESCRIPTION: Customer information and profile data
+CUSTOMER_ID | VARCHAR | Unique identifier for each customer
+CUSTOMER_NAME | VARCHAR | Full name of the customer
+EMAIL | VARCHAR | Customer's email address
+PHONE | VARCHAR | Customer's phone number
+REGISTRATION_DATE | DATE | Date when customer registered
+CUSTOMER_SEGMENT | VARCHAR | Customer segment (PREMIUM, GOLD, SILVER, BRONZE)
+COUNTRY | VARCHAR | Customer's country
+CITY | VARCHAR | Customer's city
+STATE | VARCHAR | Customer's state/province
+POSTAL_CODE | VARCHAR | Customer's postal/zip code
+DATE_OF_BIRTH | DATE | Customer's date of birth
+GENDER | VARCHAR | Customer's gender
+IS_ACTIVE | BOOLEAN | Whether the customer account is active
+LIFETIME_VALUE | NUMBER | Total lifetime value of the customer
+CREATED_AT | TIMESTAMP | When the record was created
+UPDATED_AT | TIMESTAMP | When the record was last updated
+
+TABLE: PRODUCTS
+DESCRIPTION: Product catalog with detailed product information
+PRODUCT_ID | VARCHAR | Unique identifier for each product
+PRODUCT_NAME | VARCHAR | Name of the product
+CATEGORY | VARCHAR | Main product category
+SUBCATEGORY | VARCHAR | Product subcategory
+BRAND | VARCHAR | Product brand name
+PRICE | NUMBER | Current selling price
+COST | NUMBER | Product cost/wholesale price
+SUPPLIER | VARCHAR | Product supplier name
+SKU | VARCHAR | Stock keeping unit identifier
+WEIGHT | NUMBER | Product weight
+DIMENSIONS | VARCHAR | Product dimensions
+COLOR | VARCHAR | Product color
+SIZE | VARCHAR | Product size
+IS_ACTIVE | BOOLEAN | Whether the product is currently active/available
+LAUNCH_DATE | DATE | Date when the product was launched
+DISCONTINUED_DATE | DATE | Date when the product was discontinued (if applicable)
+INVENTORY_COUNT | NUMBER | Current inventory count
+CREATED_AT | TIMESTAMP | When the record was created
+UPDATED_AT | TIMESTAMP | When the record was last updated
+
+# Common JOIN Relationships:
+# TRANSACTIONS.CUSTOMER_ID = CUSTOMERS.CUSTOMER_ID (to get customer details for transactions)
+# TRANSACTIONS.PRODUCT_ID = PRODUCTS.PRODUCT_ID (to get product details for transactions)
+# For complete analysis, often need: TRANSACTIONS JOIN CUSTOMERS JOIN PRODUCTS
