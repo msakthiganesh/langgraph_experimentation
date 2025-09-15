@@ -620,6 +620,8 @@ Examples:
         state['error'] = f"Error in context enhancement: {str(e)}"
         print(f"❌ Error in context enhancement: {e}")
 
+    # Mark completion
+    state['context_enhanced'] = True
     return state
 
 
@@ -679,6 +681,8 @@ def intent_classifier_tool(state: WorkflowState) -> WorkflowState:
         state['error'] = f"Error in intent classification: {str(e)}"
         print(f"❌ Error in intent classification: {e}")
 
+    # Mark completion
+    state['intent_classified'] = True
     return state
 
 
@@ -792,6 +796,8 @@ Complex multi-table query:
         state['error'] = f"Error generating SQL: {str(e)}"
         print(f"❌ Error in SQL generation: {e}")
 
+    # Mark completion
+    state['sql_generated'] = True
     return state
 
 
@@ -845,6 +851,8 @@ def sql_executor_tool(state: WorkflowState) -> WorkflowState:
         state['error'] = f"Error executing SQL: {str(e)}"
         print(f"❌ Error in SQL execution: {e}")
 
+    # Mark completion
+    state['sql_executed'] = True
     return state
 
 
@@ -931,6 +939,8 @@ Query Results: {json.dumps(state['query_result'], indent=2)}
 
         print(f"📋 Raw data response: {state['final_response'][:200]}...")
 
+    # Mark completion
+    state['response_formatted'] = True
     return state
 
 
@@ -991,30 +1001,44 @@ def format_single_result(result: Dict) -> str:
 
 def workflow_orchestrator_tool(state: WorkflowState) -> WorkflowState:
     """
-    Tool 5: LLM-based workflow orchestrator that decides execution strategy
-    This tool analyzes the query and sets up the execution context
+    Dynamic workflow orchestrator that decides execution strategy and tool sequence
     """
-    print(f"🎯 Orchestrating workflow for: {state['user_query']}")
+    print(f"🎯 Orchestrating dynamic workflow for: {state['user_query']}")
 
-    system_prompt = """You are a workflow orchestrator for a data analysis system.
-    
-    Analyze the user query and determine the execution strategy. Consider:
-    1. Query complexity (simple lookup vs complex analysis)
-    2. Time references (specific dates, relative dates, comparisons)
-    3. Data aggregation needs (sum, count, average, etc.)
-    4. Expected output format (single value, comparison, list, etc.)
-    
-    Respond with a JSON object containing:
-    {
-        "complexity": "simple|moderate|complex",
-        "query_type": "single_lookup|comparison|aggregation|time_series",
-        "expected_output": "single_value|comparison|multiple_values|summary",
-        "notes": "Any special considerations for processing"
-    }"""
+    system_prompt = """You are a dynamic workflow orchestrator for a data analysis chatbot.
+
+Available tools and their purposes:
+1. context_enhancer - Enhances follow-up questions with previous conversation context
+2. intent_classifier - Determines if query is relevant to business data analysis
+3. nl_to_sql - Converts natural language to SQL queries
+4. sql_executor - Executes SQL queries against Snowflake database
+5. response_formatter - Formats query results into natural language
+
+Analyze the user query and determine the optimal execution path. Consider:
+- Is this a follow-up question that needs context enhancement?
+- Is the query obviously relevant to data analysis (skip intent classification)?
+- What's the query complexity and expected processing needs?
+- Are there any shortcuts or optimizations possible?
+
+Respond with a JSON object containing the execution plan:
+{
+    "execution_path": ["tool1", "tool2", "tool3"],
+    "skip_tools": ["tool_name"],
+    "reasoning": "Why this path was chosen",
+    "complexity": "simple|moderate|complex",
+    "query_type": "greeting|irrelevant|simple_data|complex_data|follow_up",
+    "optimizations": ["optimization1", "optimization2"]
+}
+
+Example paths:
+- Simple data query: ["intent_classifier", "nl_to_sql", "sql_executor", "response_formatter"]
+- Follow-up question: ["context_enhancer", "nl_to_sql", "sql_executor", "response_formatter"]
+- Greeting/irrelevant: ["intent_classifier"]
+- Obviously relevant complex query: ["nl_to_sql", "sql_executor", "response_formatter"]"""
 
     try:
         llm_response = call_llm(
-            prompt=f"Analyze this query for workflow planning: '{state['user_query']}'",
+            prompt=f"Plan execution path for: '{state['user_query']}'",
             system_prompt=system_prompt
         )
 
@@ -1023,21 +1047,42 @@ def workflow_orchestrator_tool(state: WorkflowState) -> WorkflowState:
             import json
             workflow_plan = json.loads(llm_response)
             state['context']['workflow_plan'] = workflow_plan
-            print(f"📋 Workflow Plan: {workflow_plan}")
+            state['context']['execution_path'] = workflow_plan.get(
+                'execution_path', [])
+            state['context']['skip_tools'] = workflow_plan.get(
+                'skip_tools', [])
+
+            print(f"📋 Dynamic Workflow Plan:")
+            print(
+                f"   Execution Path: {workflow_plan.get('execution_path', [])}")
+            print(f"   Skip Tools: {workflow_plan.get('skip_tools', [])}")
+            print(
+                f"   Reasoning: {workflow_plan.get('reasoning', 'No reasoning provided')}")
+            print(
+                f"   Complexity: {workflow_plan.get('complexity', 'unknown')}")
+
         except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
+            # Fallback to default path
+            default_path = ["intent_classifier", "nl_to_sql",
+                            "sql_executor", "response_formatter"]
             state['context']['workflow_plan'] = {
+                "execution_path": default_path,
+                "skip_tools": [],
+                "reasoning": "Default path due to parsing error",
                 "complexity": "simple",
-                "query_type": "single_lookup",
-                "expected_output": "single_value",
-                "notes": "Default plan due to parsing error"
+                "query_type": "simple_data"
             }
-            print(f"⚠️ Using default workflow plan due to parsing error")
+            state['context']['execution_path'] = default_path
+            state['context']['skip_tools'] = []
+            print(
+                f"⚠️ Using default workflow path due to parsing error: {default_path}")
 
     except Exception as e:
         state['error'] = f"Error in workflow orchestration: {str(e)}"
         print(f"❌ Error in workflow orchestration: {e}")
 
+    # Mark completion
+    state['orchestration_completed'] = True
     return state
 
 
@@ -1051,14 +1096,14 @@ print("✅ All tool functions defined!")
 # %%
 
 
-def create_workflow():
+def create_dynamic_workflow():
     """
-    Create and configure the LangGraph workflow with LLM-based orchestration
+    Create a dynamic LangGraph workflow that adapts based on orchestrator decisions
     """
     # Create a new state graph
     workflow = StateGraph(WorkflowState)
 
-    # Add nodes (our tool functions)
+    # Add all available tool nodes
     workflow.add_node("context_enhancer", context_enhancer_tool)
     workflow.add_node("workflow_orchestrator", workflow_orchestrator_tool)
     workflow.add_node("intent_classifier", intent_classifier_tool)
@@ -1066,105 +1111,98 @@ def create_workflow():
     workflow.add_node("sql_executor", sql_executor_tool)
     workflow.add_node("response_formatter", response_formatter_tool)
 
-    # Define the workflow edges (execution order)
+    # Always start with context enhancement, then orchestration
     workflow.set_entry_point("context_enhancer")
+    workflow.add_edge("context_enhancer", "workflow_orchestrator")
 
-    # Add conditional logic
-    def after_context_enhancement(state: WorkflowState) -> str:
-        """Move to workflow orchestration after context enhancement"""
+    # Dynamic routing function based on orchestrator decisions
+    def dynamic_router(state: WorkflowState) -> str:
+        """Route to next tool based on orchestrator's execution plan"""
         if state['error']:
             return END
-        else:
-            return "workflow_orchestrator"
 
-    def after_orchestration(state: WorkflowState) -> str:
-        """Move to intent classification after orchestration"""
-        if state['error']:
+        execution_path = state['context'].get('execution_path', [])
+        skip_tools = state['context'].get('skip_tools', [])
+
+        if not execution_path:
+            print("⚠️ No execution path found, using default path")
+            execution_path = ["intent_classifier", "nl_to_sql",
+                              "sql_executor", "response_formatter"]
+
+        # Determine what tools have been completed
+        completed_tools = set()
+        if state.get('context_enhanced', False):
+            completed_tools.add('context_enhancer')
+        if state.get('orchestration_completed', False):
+            completed_tools.add('workflow_orchestrator')
+        if state.get('intent_classified', False):
+            completed_tools.add('intent_classifier')
+        if state.get('sql_generated', False):
+            completed_tools.add('nl_to_sql')
+        if state.get('sql_executed', False):
+            completed_tools.add('sql_executor')
+        if state.get('response_formatted', False):
+            completed_tools.add('response_formatter')
+
+        print(f"🔍 Completed tools: {completed_tools}")
+        print(f"🎯 Planned execution path: {execution_path}")
+        print(f"⏭️ Skip tools: {skip_tools}")
+
+        # Find next tool to execute
+        for tool in execution_path:
+            if tool not in completed_tools and tool not in skip_tools:
+                print(f"➡️ Dynamic routing to: {tool}")
+                return tool
+
+        # Special handling for irrelevant queries
+        if state.get('intent_classified', False) and not state.get('is_relevant', True):
+            print("🚫 Query not relevant, ending workflow")
             return END
-        else:
-            return "intent_classifier"
 
-    def should_continue(state: WorkflowState) -> str:
-        """Decide whether to continue processing or end"""
-        if not state['is_relevant']:
-            return END
-        elif state['error']:
-            return END
-        else:
-            return "nl_to_sql"
+        # If all tools completed or no more tools, end workflow
+        print("✅ All planned tools completed, ending workflow")
+        return END
 
-    def after_sql_generation(state: WorkflowState) -> str:
-        """Continue to SQL execution if no errors"""
-        if state['error'] or not state['sql_query']:
-            return END
-        else:
-            return "sql_executor"
-
-    def after_sql_execution(state: WorkflowState) -> str:
-        """Continue to response formatting if no errors"""
-        if state['error']:
-            return END
-        else:
-            return "response_formatter"
-
-    # Add conditional edges
-    workflow.add_conditional_edges(
-        "context_enhancer",
-        after_context_enhancement,
-        {
-            "workflow_orchestrator": "workflow_orchestrator",
-            END: END
-        }
-    )
-
+    # Add dynamic conditional edges from orchestrator
     workflow.add_conditional_edges(
         "workflow_orchestrator",
-        after_orchestration,
+        dynamic_router,
         {
+            "context_enhancer": "context_enhancer",
             "intent_classifier": "intent_classifier",
-            END: END
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "intent_classifier",
-        should_continue,
-        {
             "nl_to_sql": "nl_to_sql",
-            END: END
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "nl_to_sql",
-        after_sql_generation,
-        {
             "sql_executor": "sql_executor",
-            END: END
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "sql_executor",
-        after_sql_execution,
-        {
             "response_formatter": "response_formatter",
             END: END
         }
     )
 
-    # Response formatter always ends the workflow
+    # Add dynamic routing from each tool
+    for tool_name in ["intent_classifier", "nl_to_sql", "sql_executor"]:
+        workflow.add_conditional_edges(
+            tool_name,
+            dynamic_router,
+            {
+                "context_enhancer": "context_enhancer",
+                "intent_classifier": "intent_classifier",
+                "nl_to_sql": "nl_to_sql",
+                "sql_executor": "sql_executor",
+                "response_formatter": "response_formatter",
+                END: END
+            }
+        )
+
+    # Response formatter always ends
     workflow.add_edge("response_formatter", END)
 
     # Compile the workflow
     app = workflow.compile()
-
     return app
 
 
-# Create our workflow
-chatbot_workflow = create_workflow()
-print("✅ LangGraph workflow created successfully!")
+# Create our dynamic workflow
+chatbot_workflow = create_dynamic_workflow()
+print("✅ Dynamic LangGraph workflow created successfully!")
 
 # %% [markdown]
 # ## 6. Main Chatbot Function
