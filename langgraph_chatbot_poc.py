@@ -37,23 +37,24 @@ load_dotenv()
 
 # Snowflake connector
 
-# Initialize GenAI Platform GDK client
+# Initialize CFG GenAI GDK client
 USECASE_ID = os.getenv("CFG_USECASE_ID", "chatbot_usecase")
 EXPERIMENT_NAME = os.getenv("CFG_EXPERIMENT_NAME", "langgraph_chatbot")
 EXPERIMENT_DESC = os.getenv("CFG_EXPERIMENT_DESC",
-                            "LangGraph chatbot with GenAI Platform")
+                            "LangGraph chatbot with CFG GenAI")
 
 try:
-    gdk = gdk(USECASE_ID, EXPERIMENT_NAME, EXPERIMENT_DESC)
-    print("✅ GenAI Platform GDK initialized successfully!")
+    gdk = CFGGenAIGDK(USECASE_ID, EXPERIMENT_NAME, EXPERIMENT_DESC)
+    print("✅ CFG GenAI GDK initialized successfully!")
 except Exception as e:
-    print(f"❌ Failed to initialize GenAI Platform GDK: {e}")
+    print(f"❌ Failed to initialize CFG GenAI GDK: {e}")
     raise e
 
 
 def call_llm(prompt: str, system_prompt: str = "", model: str = None) -> str:
     """
-    Helper function to make LLM calls using GenAI Platform GDK
+    Robust helper function to make LLM calls using CFG GenAI GDK
+    Handles different response structures
     """
     try:
         # Use model from environment variable if not specified
@@ -66,7 +67,7 @@ def call_llm(prompt: str, system_prompt: str = "", model: str = None) -> str:
         else:
             combined_prompt = prompt
 
-        # Prepare prompt template for GenAI Platform
+        # Prepare prompt template for CFG GenAI
         prompt_template = {
             "prompt_template": [
                 {"role": "system", "content": combined_prompt}
@@ -86,12 +87,74 @@ def call_llm(prompt: str, system_prompt: str = "", model: str = None) -> str:
             model_id=model
         )
 
-        # Extract the response content
-        generated_response = gdk_response['genResponse']['choices'][0]['message']['content']
-        return generated_response.strip()
+        # Try different ways to extract the content based on response structure
+        generated_response = None
+
+        # Method 1: Standard OpenAI-like structure
+        try:
+            if isinstance(gdk_response, dict):
+                generated_response = gdk_response['genResponse']['choices'][0]['message']['content']
+        except (KeyError, TypeError, IndexError):
+            pass
+
+        # Method 2: Direct choices access
+        if generated_response is None:
+            try:
+                if isinstance(gdk_response, dict) and 'choices' in gdk_response:
+                    generated_response = gdk_response['choices'][0]['message']['content']
+            except (KeyError, TypeError, IndexError):
+                pass
+
+        # Method 3: Direct response field
+        if generated_response is None:
+            try:
+                if isinstance(gdk_response, dict):
+                    if 'response' in gdk_response:
+                        generated_response = gdk_response['response']
+                    elif 'content' in gdk_response:
+                        generated_response = gdk_response['content']
+                    elif 'text' in gdk_response:
+                        generated_response = gdk_response['text']
+            except (KeyError, TypeError):
+                pass
+
+        # Method 4: Tuple/List response
+        if generated_response is None:
+            try:
+                if isinstance(gdk_response, (list, tuple)) and len(gdk_response) > 0:
+                    first_element = gdk_response[0]
+                    if isinstance(first_element, str):
+                        generated_response = first_element
+                    elif isinstance(first_element, dict):
+                        if 'content' in first_element:
+                            generated_response = first_element['content']
+                        elif 'message' in first_element:
+                            generated_response = first_element['message']
+                        elif 'text' in first_element:
+                            generated_response = first_element['text']
+            except (IndexError, TypeError):
+                pass
+
+        # Method 5: String response
+        if generated_response is None:
+            try:
+                if isinstance(gdk_response, str):
+                    generated_response = gdk_response
+            except Exception:
+                pass
+
+        # If all methods failed, return the raw response as string
+        if generated_response is None:
+            generated_response = str(gdk_response)
+
+        return generated_response.strip() if generated_response else "No response generated"
 
     except Exception as e:
-        print(f"❌ GenAI Platform LLM call failed: {e}")
+        print(f"❌ CFG GenAI LLM call failed: {e}")
+        print(
+            f"Response type: {type(gdk_response) if 'gdk_response' in locals() else 'Unknown'}")
+        if 'gdk_response' in locals():
+            print(f"Response: {gdk_response}")
         return f"Error: {str(e)}"
 
 
@@ -788,6 +851,7 @@ def sql_executor_tool(state: WorkflowState) -> WorkflowState:
 def response_formatter_tool(state: WorkflowState) -> WorkflowState:
     """
     Tool 4: Format the query results into natural language response using LLM
+    If formatting fails, return the raw dataframe/results
     """
     if not state['is_relevant'] or state['error']:
         return state
@@ -823,15 +887,106 @@ Query Results: {json.dumps(state['query_result'], indent=2)}
             system_prompt=system_prompt
         )
 
-        state['final_response'] = llm_response.strip()
-        print(f"✅ Final response: {state['final_response']}")
+        # Check if the LLM response is valid and not an error
+        if llm_response and not llm_response.startswith("Error:") and len(llm_response.strip()) > 0:
+            state['final_response'] = llm_response.strip()
+            print(f"✅ Final response: {state['final_response']}")
+        else:
+            raise ValueError("LLM returned invalid or empty response")
 
     except Exception as e:
-        state['error'] = f"Error formatting response: {str(e)}"
-        state['final_response'] = "I encountered an error while formatting the response."
-        print(f"❌ Error in response formatting: {e}")
+        print(f"⚠️ Error in response formatting: {e}")
+        print("📊 Returning raw data instead of formatted response")
+
+        # Return the raw dataframe/results when formatting fails
+        query_result = state.get('query_result', {})
+
+        if isinstance(query_result, dict):
+            if 'results' in query_result:
+                # Multiple rows - convert to DataFrame-like string representation
+                results = query_result['results']
+                if results:
+                    # Create a simple table representation
+                    df_str = format_results_as_table(results)
+                    state['final_response'] = f"Here are the query results:\n\n{df_str}"
+                else:
+                    state['final_response'] = "No data found for your query."
+            elif 'sample_results' in query_result:
+                # Large result set - show sample
+                sample_results = query_result['sample_results']
+                total_rows = query_result.get(
+                    'total_rows', len(sample_results))
+                df_str = format_results_as_table(sample_results)
+                state['final_response'] = f"Here are the first {len(sample_results)} results out of {total_rows} total:\n\n{df_str}"
+            elif 'message' in query_result:
+                # No data message
+                state['final_response'] = query_result['message']
+            else:
+                # Single row or simple result
+                df_str = format_single_result(query_result)
+                state['final_response'] = f"Query result:\n\n{df_str}"
+        else:
+            # Fallback for unexpected result format
+            state['final_response'] = f"Query completed. Result: {str(query_result)}"
+
+        print(f"📋 Raw data response: {state['final_response'][:200]}...")
 
     return state
+
+
+def format_results_as_table(results: List[Dict]) -> str:
+    """
+    Format query results as a simple table string
+    """
+    if not results:
+        return "No data available"
+
+    try:
+        # Get all unique keys from all results
+        all_keys = set()
+        for result in results:
+            all_keys.update(result.keys())
+
+        headers = list(all_keys)
+
+        # Create header row
+        table_str = " | ".join(headers) + "\n"
+        table_str += "-" * len(table_str) + "\n"
+
+        # Add data rows
+        for result in results:
+            row_values = []
+            for header in headers:
+                value = result.get(header, "")
+                # Format numbers with commas if they're large
+                if isinstance(value, (int, float)) and abs(value) >= 1000:
+                    value = f"{value:,}"
+                row_values.append(str(value))
+            table_str += " | ".join(row_values) + "\n"
+
+        return table_str
+
+    except Exception as e:
+        # Fallback to simple string representation
+        return "\n".join([str(result) for result in results])
+
+
+def format_single_result(result: Dict) -> str:
+    """
+    Format a single result dictionary as a readable string
+    """
+    try:
+        formatted_lines = []
+        for key, value in result.items():
+            # Format numbers with commas if they're large
+            if isinstance(value, (int, float)) and abs(value) >= 1000:
+                value = f"{value:,}"
+            formatted_lines.append(f"{key}: {value}")
+
+        return "\n".join(formatted_lines)
+
+    except Exception as e:
+        return str(result)
 
 
 def workflow_orchestrator_tool(state: WorkflowState) -> WorkflowState:
