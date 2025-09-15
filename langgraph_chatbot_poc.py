@@ -13,11 +13,11 @@
 
 # %%
 # Install required packages (run this in your environment)
-# !pip install langgraph openai pandas python-dotenv snowflake-connector-python
+# !pip install langgraph pandas python-dotenv snowflake-connector-python cai
 
 from snowflake.connector import DictCursor
 import snowflake.connector
-from openai import OpenAI
+from cai import gdk
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
 import os
@@ -33,37 +33,65 @@ load_dotenv()
 
 # LangGraph imports
 
-# OpenAI for LLM calls
+# GenAI Platform SDK for LLM calls
 
 # Snowflake connector
 
-# Initialize OpenAI client
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    raise ValueError(
-        "OPENAI_API_KEY environment variable is required. Please check your .env file.")
-client = OpenAI(api_key=openai_api_key)
+# Initialize GenAI Platform GDK client
+USECASE_ID = os.getenv("CFG_USECASE_ID", "chatbot_usecase")
+EXPERIMENT_NAME = os.getenv("CFG_EXPERIMENT_NAME", "langgraph_chatbot")
+EXPERIMENT_DESC = os.getenv("CFG_EXPERIMENT_DESC",
+                            "LangGraph chatbot with GenAI Platform")
+
+try:
+    gdk = gdk(USECASE_ID, EXPERIMENT_NAME, EXPERIMENT_DESC)
+    print("✅ GenAI Platform GDK initialized successfully!")
+except Exception as e:
+    print(f"❌ Failed to initialize GenAI Platform GDK: {e}")
+    raise e
 
 
-def call_llm(prompt: str, system_prompt: str = "", model: str = "gpt-3.5-turbo") -> str:
+def call_llm(prompt: str, system_prompt: str = "", model: str = None) -> str:
     """
-    Helper function to make LLM calls
+    Helper function to make LLM calls using GenAI Platform GDK
     """
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=500
+        # Use model from environment variable if not specified
+        if model is None:
+            model = os.getenv("CFG_MODEL_ID", "md005_openai_gpt4o")
+
+        # Combine system prompt and user prompt
+        if system_prompt:
+            combined_prompt = f"{system_prompt}\n\nUser Query: {prompt}"
+        else:
+            combined_prompt = prompt
+
+        # Prepare prompt template for GenAI Platform
+        prompt_template = {
+            "prompt_template": [
+                {"role": "system", "content": combined_prompt}
+            ]
+        }
+
+        # Set hyperparameters
+        hyperparam = {
+            'max_tokens': 2000,
+            'temperature': 0.1
+        }
+
+        # Make the LLM call
+        gdk_response = gdk.invoke_llmgateway(
+            prompt_template=prompt_template,
+            hyperparam=hyperparam,
+            model_id=model
         )
-        return response.choices[0].message.content.strip()
+
+        # Extract the response content
+        generated_response = gdk_response['genResponse']['choices'][0]['message']['content']
+        return generated_response.strip()
+
     except Exception as e:
-        print(f"❌ LLM call failed: {e}")
+        print(f"❌ GenAI Platform LLM call failed: {e}")
         return f"Error: {str(e)}"
 
 
@@ -1136,7 +1164,7 @@ print("✅ Main chatbot function with follow-up support ready!")
 
 def setup_instructions():
     """
-    Display setup instructions for Snowflake and OpenAI configuration
+    Display setup instructions for Snowflake and GenAI Platform configuration
     """
     print("🔧 SETUP INSTRUCTIONS")
     print("=" * 50)
@@ -1145,7 +1173,9 @@ def setup_instructions():
     print("   - Replace placeholder values with your actual credentials")
     print("   - The .env file is automatically loaded by the script")
     print("\n2. Required environment variables in .env:")
-    print("   OPENAI_API_KEY=your-openai-api-key")
+    print("   CFG_USECASE_ID=your-usecase-id")
+    print("   CFG_EXPERIMENT_NAME=your-experiment-name")
+    print("   CFG_EXPERIMENT_DESC=your-experiment-description")
     print("   SNOWFLAKE_ACCOUNT=your-account.snowflakecomputing.com")
     print("   SNOWFLAKE_USER=your-username")
     print("   SNOWFLAKE_PASSWORD=your-password")
@@ -1167,8 +1197,9 @@ def setup_instructions():
 
     try:
         # Test if configuration is valid by attempting to create instances
-        test_openai_key = os.getenv("OPENAI_API_KEY")
-        print(f"OpenAI API Key: {'✅ Set' if test_openai_key else '❌ Not set'}")
+        test_usecase_id = os.getenv("CFG_USECASE_ID")
+        print(
+            f"GenAI Platform Usecase ID: {'✅ Set' if test_usecase_id else '❌ Not set'}")
 
         # Test Snowflake config
         try:
@@ -1366,7 +1397,7 @@ print("Uncomment the last line in the cell above to run the interactive demo")
 # - **Multi-Table Support**: Handles complex queries across multiple related tables
 # - **Schema File Integration**: Loads table schemas from database_schema.txt file for easy maintenance
 # - **Intelligent JOIN Generation**: Automatically creates appropriate JOIN queries based on relationships
-# - **Real LLM Integration**: All tools use OpenAI for intelligent processing
+# - **Real LLM Integration**: All tools use GenAI Platform for intelligent processing
 # - **Snowflake Integration**: Direct connection to Snowflake data warehouse
 # - **Session Management**: Tracks conversation history per session with configurable history limits
 # - **Robust Error Handling**: Proper error handling for database and LLM failures
